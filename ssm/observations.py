@@ -993,3 +993,74 @@ class VonMisesObservations(_Observations):
         return expectations.dot(mus)
 
 
+class PoissonDirectionalObservations(_Observations):
+    def __init__(self, K, D, M=0):
+        """
+        K:  Number of discrete states
+        D:  Number of neurons
+        M:  Number of inputs (Must be 2),
+            which correspond to direction and position
+        """
+        super(PoissonDirectionalObservations, self).__init__(K, D, M)
+
+        # We need the inputs to include the 1d position and a 1d direction
+        assert M == 2
+
+        # Parameters of the location model
+        self.mus = npr.randn(D)
+        self.log_sigmas = npr.randn(D)
+
+        # Parameters of the state- and direction-dependent rate
+        self.log_lambdas = npr.randn(2, K, D)
+
+    @property
+    def params(self):
+        return self.mus, self.log_sigmas, self.log_lambdas
+
+    @params.setter
+    def params(self, value):
+        self.mus, self.log_sigmas, self.log_lambdas = value
+
+    def permute(self, perm):
+        self.log_lambdas = self.log_lambdas[perm]
+
+    @ensure_args_are_lists
+    def initialize(self, datas, inputs=None, masks=None, tags=None):
+        pass
+
+    def log_likelihoods(self, data, input, mask, tag):
+        assert data.dtype == int
+
+        p = input[:, 0]  # position
+        d = input[:, 1].astype(int)  # direction
+        assert d.min() >= 0 and d.max() < 2
+
+        # Position dependent rate
+        log_rates = norm.logpdf(p[:, None], self.mus[None, :], np.exp(self.log_sigmas[None, :]))  # T x D
+
+        # Add the state- and direction- dependent gain
+        log_rates = log_rates[:, None, :] + self.log_lambdas[d]  # T x K x D
+
+        # Now the rest is just the Poisson log likelihood
+        mask = np.ones_like(data, dtype=bool) if mask is None else mask
+        lls = -gammaln(data[:, None, :] + 1) - np.exp(log_rates) + data[:, None, :] * log_rates
+        assert lls.shape == (data.shape[0], self.K, self.D)
+        return np.sum(lls * mask[:, None, :], axis=2)
+
+    def sample_x(self, z, xhist, input=None, tag=None, with_noise=True):
+        #lambdas = np.exp(self.log_lambdas)
+        #return npr.poisson(lambdas[z])
+        raise NotImplemented
+
+    def m_step(self, expectations, datas, inputs, masks, tags, **kwargs):
+        # TODO: Implement but will default to GD
+        pass
+
+    def smooth(self, expectations, data, input, tag):
+        """
+        Compute the mean observation under the posterior distribution
+        of latent discrete states.
+        """
+        #print(expectations.shape)
+        # expectations.dot(np.exp(self.log_lambdas))
+        raise NotImplemented
